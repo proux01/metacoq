@@ -369,12 +369,30 @@ Section ContextConversion.
     exists t'', unf. intuition auto.
   Qed.
 
+  (* Lemma eq_term_upto_univ_red_ctx Rle Re Γ Γ' t u : *)
+  (*   eq_term_upto_univ Rle Re t u -> red_ctx Σ Γ Γ' -> eq_term_upto_univ Rle Re t u. *)
+  (* Proof. *)
+  (*   induction 1 in Γ' |- *; intro Hctx; constructor; tas. *)
+  (*   admit. *)
+
+  (* Lemma leq_term_red_ctx Γ Γ' t u : *)
+  (*   leq_term Σ t u -> red_ctx Σ Γ Γ' -> leq_term Σ t u. *)
+  (* Proof. *)
+  (*   intros H Hctx; eapply eq_term_upto_univ_impl; tea. *)
+
+Require Import PCUICConfluence.
+
   Lemma cumul_red_ctx Γ Γ' T U :
     Σ ;;; Γ |- T <= U ->
     red_ctx Σ Γ Γ' ->
     Σ ;;; Γ' |- T <= U.
   Proof.
-    intros H Hctx.
+    induction 1 in Γ' |- *; intro Hctx.
+    - now constructor.
+    - etransitivity. apply red_cumul. eapply PCUICConfluence.red_red_ctx.
+        
+
+
     apply cumul_alt in H as [v [v' [[redl redr] leq]]].
     destruct (red_red_ctx Σ wfΣ redl Hctx) as [lnf [redl0 redr0]].
     apply cumul_alt.

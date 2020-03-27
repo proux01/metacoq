@@ -371,21 +371,6 @@ Section Principality.
 
   (* eapply red_ *)
 
-  Lemma app_mkApps :
-    forall u v t l,
-      isApp t = false ->
-      tApp u v = mkApps t l ->
-      ∑ l',
-        (l = l' ++ [v])%list ×
-        u = mkApps t l'.
-  Proof.
-    intros u v t l h e.
-    induction l in u, v, t, e, h |- * using list_rect_rev.
-    - cbn in e. subst. cbn in h. discriminate.
-    - rewrite <- mkApps_nested in e. cbn in e.
-      exists l. inversion e. subst. auto.
-  Qed.
-
   (* TODO Duplicate of red_mkApps_tInd?? *)
   Lemma invert_red_ind :
     forall Γ ind ui l T,

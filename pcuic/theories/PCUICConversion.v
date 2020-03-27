@@ -5,7 +5,7 @@ From MetaCoq.PCUIC Require Import PCUICAst
      PCUICLiftSubst PCUICTyping
      PCUICSubstitution PCUICPosition PCUICCumulativity PCUICReduction
      PCUICConfluence  PCUICParallelReductionConfluence PCUICEquality
-     PCUICContextConversion PCUICWeakening.
+     PCUICWeakening.
 Require Import ssreflect.
 Local Open Scope string_scope.
 Set Asymmetric Patterns.
@@ -31,6 +31,16 @@ Existing Class wf.
 Instance conv_trans {cf:checker_flags} (Σ : global_env_ext) {Γ} :
   wf Σ -> Transitive (conv Σ Γ).
 Proof.
+  intros wfΣ t u v X0 X1.
+  induction X0 in v, X1 |- *; cbn.
+  - admit.
+  - econstructor 2; eauto.
+  - admit.
+  - 
+
+
+
+
   intros wfΣ t u v X0 X1.
   eapply conv_alt_red in X0 as [t' [u' [[tt' uu'] eq]]].
   eapply conv_alt_red in X1 as [u'' [v' [[uu'' vv'] eq']]].

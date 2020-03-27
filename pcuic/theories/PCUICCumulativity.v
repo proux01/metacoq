@@ -13,28 +13,6 @@ Set Default Goal Selector "!".
 
 Reserved Notation " Σ ;;; Γ |- t == u " (at level 50, Γ, t, u at next level).
 
-(* TODO UPDATE *)
-Lemma cumul_alt `{cf : checker_flags} Σ Γ t u :
-  Σ ;;; Γ |- t <= u <~> { v & { v' & (red Σ Γ t v * red Σ Γ u v' * leq_term (global_ext_constraints Σ) v v')%type } }.
-Proof.
-  split.
-  - induction 1.
-    + exists t, u. intuition auto.
-    + destruct IHX as (v' & v'' & (redv & redv') & leqv).
-      exists v', v''. intuition auto. now eapply red_step.
-    + destruct IHX as (v' & v'' & (redv & redv') & leqv).
-      exists v', v''. intuition auto. now eapply red_step.
-    + destruct IHX as (v' & v'' & (redv & redv') & leqv).
-(*
-  - intros [v [v' [[redv redv'] Hleq]]]. apply red_alt in redv. apply red_alt in redv'.
-    apply clos_rt_rt1n in redv.
-    apply clos_rt_rt1n in redv'.
-    induction redv. induction redv'. constructor; auto.
-    econstructor 3; eauto.
-    econstructor 2; eauto.
-Qed. *)
-Admitted.
-
 
 Instance cumul_refl' {cf:checker_flags} Σ Γ : Reflexive (cumul Σ Γ).
 Proof.
@@ -119,12 +97,17 @@ Qed.
 Lemma cumul2_conv {cf:checker_flags} Σ Γ t u :
   (Σ ;;; Γ |- t <= u) * (Σ ;;; Γ |- u <= t) -> Σ ;;; Γ |- t = u.
 Proof.
-Admitted.
+  intros [H1 H2]; revert H2. induction H1.
+Abort.
 
 Lemma red_conv {cf:checker_flags} (Σ : global_env_ext) Γ t u
   : red Σ Γ t u -> Σ ;;; Γ |- t = u.
 Proof.
-Admitted.
+  intros. apply red_alt in X. apply clos_rt_rt1n in X.
+  induction X.
+  - reflexivity.
+  - econstructor 2. all: eauto.
+Defined.
 Hint Resolve red_conv : core.
 
 Lemma eq_term_App `{checker_flags} φ f f' :
@@ -198,23 +181,6 @@ Proof.
   - eapply conv_eta_l. all: eassumption.
 Qed.
 
-(* TODO UPDATE *)
-Lemma conv_alt_red {cf : checker_flags} {Σ : global_env_ext} {Γ : context} {t u : term} :
-  Σ;;; Γ |- t = u <~> (∑ v v' : term, (red Σ Γ t v × red Σ Γ u v') × eq_term (global_ext_constraints Σ) v v').
-Proof.
-  (* split. *)
-  (* induction 1. exists t, u; intuition auto.
-  destruct IHX as [? [? [? ?]]].
-  exists x, x0; intuition auto. eapply red_step; eauto.
-  destruct IHX as [? [? [? ?]]].
-  exists x, x0; intuition auto. eapply red_step; eauto.
-  intros.
-  destruct X as [? [? [[? ?] ?]]].
-  eapply red_conv_conv; eauto.
-  eapply red_conv_conv_inv; eauto. now constructor.
-Qed. *)
-Admitted.
-
 
 Inductive conv_pb :=
 | Conv
@@ -270,3 +236,354 @@ Proof.
     exists na, A, f, (stack_cat π (App x ε)).
     rewrite 2!zipc_stack_cat. cbn. intuition reflexivity.
 Qed.
+
+
+From Equations Require Import Equations Relation.
+Derive Signature for red1.
+
+Require Import PCUICAstUtils.
+Require Import List. Import ListNotations. Open Scope list_scope.
+
+Lemma app_mkApps u v t l :
+  isApp t = false -> tApp u v = mkApps t l ->
+  ∑ l', (l = l' ++ [v])%list × u = mkApps t l'.
+Proof.
+  intros h e. induction l in u, v, t, e, h |- * using list_rect_rev.
+  - cbn in e. subst. cbn in h. discriminate.
+  - rewrite <- mkApps_nested in e. cbn in e.
+    exists l. inversion e. subst. auto.
+Qed.
+
+Lemma red1_tApp_inv Σ Γ t u v (H : red1 Σ Γ (tApp t u) v)
+  : (∑ w, red1 Σ Γ t w × v = tApp w u) + (∑ w, red1 Σ Γ u w × v = tApp t w).
+Proof.
+  depelim H.
+  - admit.
+  - left. apply app_mkApps in H; cbnr.
+    destruct H as [l [H1 H2]]; subst.
+    exists (mkApps fn l). split.
+    + eapply red_fix; tea. admit. (* wrong *)
+    + now rewrite <- mkApps_nested.
+  - left; eexists; split; tea. reflexivity.
+  - right; eexists; split; tea. reflexivity.
+Abort.
+
+Require Import ssrbool.
+
+Lemma not_isLambda_mkApps u l :
+  ~~ isLambda u -> ~~ isLambda (mkApps u l).
+Proof.
+  induction l in u |- *; cbn; auto.
+Qed.
+
+Lemma tLambda_mkApps_not_isLambda na A t u l :
+  ~~ isLambda u -> tLambda na A t <> mkApps u l.
+Proof.
+  intros H e. eapply not_isLambda_mkApps in H.
+  rewrite <- e in H; auto.
+Qed.
+
+Lemma tLambda_mkApps_tFix na A t mfix idx args :
+  tLambda na A t <> mkApps (tFix mfix idx) args.
+Proof.
+  now apply tLambda_mkApps_not_isLambda.
+Qed.
+
+Lemma tRel_mkApps_tFix n mfix idx args :
+  tRel n <> mkApps (tFix mfix idx) args.
+Proof.
+  induction args using rev_ind; cbn.
+  - inversion 1.
+  - rewrite <- mkApps_nested; cbn. inversion 1.
+Qed.
+
+(* Lemma tVar_mkApps_tFix n mfix idx args : *)
+(*   tVar n <> mkApps (tFix mfix idx) args. *)
+(* Proof. *)
+(*   induction args using rev_ind; cbn. *)
+(*   - inversion 1. *)
+(*   - rewrite <- mkApps_nested; cbn. inversion 1. *)
+(* Qed. *)
+
+  (* TODO MOVE *)
+  Fixpoint isFixApp t : bool :=
+    match t with
+    | tApp f u => isFixApp f
+    | tFix mfix idx => true
+    | _ => false
+    end.
+
+  (* TODO MOVE *)
+  Lemma isFixApp_mkApps :
+    forall t l,
+      isFixApp (mkApps t l) = isFixApp t.
+  Proof.
+    intros t l. induction l in t |- *.
+    - cbn. reflexivity.
+    - cbn. rewrite IHl. reflexivity.
+  Qed.
+
+Require Import PCUICLiftSubst Arith Lia.
+Lemma lift_tLambda_inv n k M na A t (H : lift n k M = tLambda na A t)
+  : ∑ A' t', M = tLambda na A' t' /\ A = lift n k A' /\ t = lift n (S k) t'.
+Proof.
+  induction M; cbn in *; try now inversion H.
+  - destruct (PeanoNat.Nat.leb k n0); inversion H.
+  - invs H. repeat eexists.
+Defined.
+
+Lemma lift_Apps_Construct_inv n k M ind c u args
+      (H : lift n k M = mkApps (tConstruct ind c u) args)
+  : ∑ args', M = mkApps (tConstruct ind c u) args'
+             /\ args = map (lift n k) args'.
+Proof.
+  revert M H. induction args using MCList.rev_ind; cbn; intros M H.
+  - destruct M; cbn in H; try discriminate.
+    { destruct (k <=? n0); discriminate. }
+    exists []. repeat split; tas.
+  - rewrite <- mkApps_nested in H; cbn in H.
+    destruct M; cbn in H; try discriminate.
+    { destruct (k <=? n0); discriminate. }
+    invs H. apply IHargs in H1. destruct H1 as [args' [H1 H2]]; subst.
+    exists (args' ++ [M2]). rewrite <- mkApps_nested; cbn.
+    rewrite map_app. repeat split.
+Qed.
+
+Lemma lift_Apps_Fix_inv n k M mfix idx args
+      (H : lift n k M = mkApps (tFix mfix idx) args)
+  : ∑ mfix' args', M = mkApps (tFix mfix' idx) args'
+             /\ mfix = map (map_def (lift n k) (lift n (#|mfix'| + k))) mfix'
+             /\ args = map (lift n k) args'.
+Proof.
+  revert M H. induction args using MCList.rev_ind; cbn; intros M H.
+  - destruct M; cbn in H; try discriminate.
+    { destruct (k <=? n0); discriminate. }
+    invs H. eexists _, []. repeat split; tas.
+  - rewrite <- mkApps_nested in H; cbn in H.
+    destruct M; cbn in H; try discriminate.
+    { destruct (k <=? n0); discriminate. }
+    invs H. apply IHargs in H1.
+    destruct H1 as [mfix' [args' [H1 [H2 H3]]]]; subst.
+    exists mfix', (args' ++ [M2]). rewrite <- mkApps_nested; cbn.
+    rewrite map_app. repeat split; tas.
+Qed.
+
+Lemma lift_Apps_CoFix_inv n k M mfix idx args
+      (H : lift n k M = mkApps (tCoFix mfix idx) args)
+  : ∑ mfix' args', M = mkApps (tCoFix mfix' idx) args'
+             /\ mfix = map (map_def (lift n k) (lift n (#|mfix'| + k))) mfix'
+             /\ args = map (lift n k) args'.
+Proof.
+  revert M H. induction args using MCList.rev_ind; cbn; intros M H.
+  - destruct M; cbn in H; try discriminate.
+    { destruct (k <=? n0); discriminate. }
+    invs H. eexists _, []. repeat split; tas.
+  - rewrite <- mkApps_nested in H; cbn in H.
+    destruct M; cbn in H; try discriminate.
+    { destruct (k <=? n0); discriminate. }
+    invs H. apply IHargs in H1.
+    destruct H1 as [mfix' [args' [H1 [H2 H3]]]]; subst.
+    exists mfix', (args' ++ [M2]). rewrite <- mkApps_nested; cbn.
+    rewrite map_app. repeat split; tas.
+Qed.
+    
+
+Require Import Program PCUICWeakening.
+
+(* todo replace in liftsubst *)
+Lemma isLambda_lift n k (bod : term) :
+  isLambda (lift n k bod) = isLambda bod.
+Proof. destruct bod; cbnr. now destruct (k <=? n0). Qed.
+
+(* todo replace in weakening *)
+Lemma lift_unfold_fix n k mfix idx :
+  unfold_fix (map (map_def (lift n k) (lift n (#|mfix| + k))) mfix) idx
+  = option_map (on_snd (lift n k)) (unfold_fix mfix idx).
+Proof.
+  unfold unfold_fix.
+  rewrite nth_error_map. destruct (nth_error mfix idx); cbnr.
+  rewrite isLambda_lift.
+  destruct isLambda; cbnr. f_equal. unfold on_snd; cbn. f_equal.
+  rewrite (distr_lift_subst_rec _ _ n 0 k).
+  rewrite fix_subst_length. f_equal.
+  unfold fix_subst. rewrite !map_length.
+  generalize #|mfix| at 2 3. induction n0; auto. simpl.
+  f_equal. apply IHn0.
+Qed.
+
+Lemma lift_unfold_cofix n k mfix idx :
+  unfold_cofix (map (map_def (lift n k) (lift n (#|mfix| + k))) mfix) idx
+  = option_map (on_snd (lift n k)) (unfold_cofix mfix idx).
+Proof.
+  unfold unfold_cofix.
+  rewrite nth_error_map. destruct (nth_error mfix idx); cbnr.
+  f_equal. unfold on_snd; cbn. f_equal.
+  rewrite (distr_lift_subst_rec _ _ n 0 k).
+  rewrite cofix_subst_length. f_equal.
+  unfold cofix_subst. rewrite !map_length.
+  generalize #|mfix| at 2 3. induction n0; auto. simpl.
+  f_equal. apply IHn0.
+Qed.
+
+(* todo replace in weakening *)
+Lemma lift_is_constructor args narg n k :
+  is_constructor narg args = is_constructor narg (map (lift n k) args).
+Proof.
+  unfold is_constructor. rewrite nth_error_map.
+  destruct nth_error; cbnr.
+  unfold isConstruct_app. destruct decompose_app eqn:Heq.
+  eapply decompose_app_lift in Heq as ->; cbn.
+  destruct t0; cbnr. destruct (k <=? n0); reflexivity.
+Qed.
+
+
+Lemma red1_strengthening Σ Γ Γ' Γ'' M N' :
+  red1 Σ (Γ ,,, Γ'' ,,, lift_context #|Γ''| 0 Γ') (lift #|Γ''| #|Γ'| M) N'
+  -> ∑ N, red1 Σ (Γ ,,, Γ') M N × N' = lift #|Γ''| #|Γ'| N.
+Proof.
+  intro H; dependent induction H.
+  - destruct M; cbn in x; try discriminate.
+    { destruct (#|Γ'| <=? n); discriminate. }
+    destruct M1; cbn in x; try discriminate.
+    { destruct (#|Γ'| <=? n); discriminate. }
+    eexists. split.
+    { constructor. }
+    invs x. now rewrite distr_lift_subst10.
+  - destruct M; cbn in x; try discriminate.
+    { destruct (#|Γ'| <=? n); discriminate. }
+    eexists. split.
+    { constructor. }
+    invs x. now rewrite distr_lift_subst10.
+  - destruct M; cbn in x; try discriminate.
+    rewrite <- app_context_assoc in e.
+    destruct (Nat.leb_spec0 #|Γ'| n); invs x.
+    + rewrite nth_error_app_context_ge in e;
+        rewrite app_context_length, lift_context_length in *; [|lia].
+      eexists. split.
+      { constructor. rewrite nth_error_app_context_ge; tas.
+        etransitivity; tea. do 2 f_equal. lia. }
+      rewrite simpl_lift; try lia.
+      f_equal. lia.
+    + rewrite nth_error_app_context_lt in e;
+        rewrite ?app_context_length, ?lift_context_length in *; [|lia].
+      rewrite nth_error_app_context_lt in e;
+        rewrite ?app_context_length, ?lift_context_length in *; [|lia].
+      rewrite nth_error_lift_context_eq in e.
+      case_eq (nth_error Γ' n); [|intro H; rewrite H in e; discriminate].
+      intros [na [bd|] ty] H; rewrite H in e; [|discriminate].
+      eexists. split.
+      { constructor. rewrite nth_error_app_context_lt; [|lia].
+        rewrite H. reflexivity. }
+      cbn in *. clear H. invs e.
+      rewrite permute_lift; [|lia]. f_equal; lia.
+  - destruct M; cbn in x; try discriminate.
+    { destruct (#|Γ'| <=? n); discriminate. }
+    invs x. symmetry in H2; apply lift_Apps_Construct_inv in H2.
+    destruct H2 as [args' [H1 H2]]; subst.
+    eexists. split.
+    { constructor. }
+    symmetry; apply lift_iota_red.
+  - symmetry in x; apply lift_Apps_Fix_inv in x.
+    destruct x as [mfix' [args' [H1 [H2 H3]]]]; subst.
+    rewrite lift_unfold_fix in e.
+    destruct (unfold_fix mfix' idx) as [[]|] eqn:eq; [|discriminate].
+    cbn in e. invs e.
+    rewrite <- lift_is_constructor in e0.
+    eexists; split.
+    { econstructor; tea. }
+    symmetry; apply lift_mkApps.
+  - destruct M; cbn in x; try discriminate.
+    { destruct (#|Γ'| <=? n); discriminate. }
+    invs x. symmetry in H2; apply lift_Apps_CoFix_inv in H2.
+    destruct H2 as [mfix' [args' [H1 [H2 H3]]]]; subst.
+    rewrite lift_unfold_cofix in e.
+    destruct (unfold_cofix mfix' idx) as [[]|] eqn:eq; [|discriminate].
+    cbn in e. invs e.
+    eexists; split.
+    { econstructor; tea. }
+    cbn. f_equal. symmetry; apply lift_mkApps.
+  - destruct M; cbn in x; try discriminate.
+    { destruct (#|Γ'| <=? n); discriminate. }
+    invs x. symmetry in H1; apply lift_Apps_CoFix_inv in H1.
+    destruct H1 as [mfix' [args' [H1 [H2 H3]]]]; subst.
+    rewrite lift_unfold_cofix in e.
+    destruct (unfold_cofix mfix' idx) as [[]|] eqn:eq; [|discriminate].
+    cbn in e. invs e.
+    eexists; split.
+    { econstructor; tea. }
+    cbn. f_equal. symmetry; apply lift_mkApps.
+  - 
+  - 
+
+    
+
+
+  induction M in Γ' |- *; cbn.
+  - case_eq (#|Γ'| <=? n); intro le.
+    + toProp.
+      intro H; depelim H; [|now apply tRel_mkApps_tFix in H].
+      rewrite nth_error_app_context_ge in e;
+        rewrite lift_context_length in *; [|lia].
+      rewrite nth_error_app_context_ge in e; [|lia].
+      eexists. split.
+      -- constructor. rewrite nth_error_app_context_ge; tas.
+         etransitivity; tea. do 2 f_equal. lia.
+      -- rewrite simpl_lift; try lia.
+         f_equal; lia.
+    + apply Nat.leb_gt in le. (* todo toProp *)
+      intro H; depelim H; [|now apply tRel_mkApps_tFix in H].
+      rewrite nth_error_app_context_lt in e;
+        [|rewrite lift_context_length; lia].
+      rewrite nth_error_lift_context_eq in e.
+      case_eq (nth_error Γ' n); [|intro H; rewrite H in e; discriminate].
+      intros [na [bd|] ty] H; rewrite H in e; [|discriminate].
+      eexists. split.
+      -- constructor. rewrite nth_error_app_context_lt; tas.
+         rewrite H. cbn. reflexivity.
+      -- cbn in *. clear H. invs e.
+         rewrite permute_lift; [|lia].
+         f_equal; lia.
+  - inversion 1.
+    apply (f_equal isFixApp) in H.
+    rewrite isFixApp_mkApps in H; discriminate. 
+  -
+
+   -
+         rewrite <- nth_error_map in e.
+
+         etransitivity; tea. do 2 f_equal. lia.
+      -- rewrite simpl_lift; try lia.
+         f_equal; lia.
+
+
+Admitted.
+
+
+
+
+Lemma eta_postponment Σ Γ u v w (H1 : eta_expands u v) (H2 : red1 Σ Γ v w)
+  : ∑ v', clos_refl (red1 Σ Γ) u v' × clos_refl eta_expands v' w.
+Proof.
+  destruct H1 as [na [A [t [π [e1 e2]]]]]; subst.
+  induction π; cbn in *.
+  - depelim H2.
+    + now apply tLambda_mkApps_tFix in H.
+    + exists t; split.
+      * constructor 2.
+      * constructor. exists na, M', t, Empty; split; cbnr.
+    + depelim H2.
+      * red in H. cbn in H. inversion H; subst; clear H.
+        apply lift_tLambda_inv in H1.
+        destruct H1 as [A' [t' [H1 [H2 H3]]]]; subst.
+        assert (X : (lift 1 1 t') {0 := tRel 0} = t') by admit.
+        rewrite X. eexists. admit.
+      * admit.
+      * apply (red1_strengthening Σ Γ [] [vass na A]) in H2.
+        cbn in H2; destruct H2 as [H [H1 H2]]; subst.
+        exists H; split.
+        -- now constructor.
+        -- constructor. eexists _, _, _, Empty.
+           repeat split.
+      * invs H2.
+        -- inversion H0.
+        -- symmetry in H; now apply tRel_mkApps_tFix in H.
